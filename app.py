@@ -40,13 +40,6 @@ def svg_icon(svg: str) -> str:
     return "data:image/svg+xml;utf8," + quote(svg)
 
 
-STREAMLIT_ICON = svg_icon("""
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-<path fill="#ff4b4b" d="M32 6l8 16 17-3-12 13 8 17-21-9-21 9 8-17L7 19l17 3z"/>
-</svg>
-""")
-
-
 BAG_ICON = svg_icon("""
 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
 <path d="M6 8h12l1 13H5L6 8z"/>
@@ -115,22 +108,12 @@ st.markdown(
         border-right: 1px solid #e5e7eb;
     }
 
-    .sidebar-logo {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-top: 0.1rem;
-        margin-bottom: 1.7rem;
-        font-size: 20px;
-        font-weight: 700;
-        color: #0f172a;
-    }
-
     .filter-title {
-        font-size: 24px;
-        font-weight: 800;
+        font-size: 30px;
+        font-weight: 850;
         color: #0f172a;
-        margin-bottom: 1.25rem;
+        margin-top: 1rem;
+        margin-bottom: 2rem;
     }
 
     .top-spacer {
@@ -214,13 +197,27 @@ st.markdown(
         margin-bottom: 6px;
     }
 
-    .kpi-delta {
+    .kpi-delta-up {
         font-size: 13px;
         color: #16a34a;
         font-weight: 800;
     }
 
-    .kpi-delta span {
+    .kpi-delta-down {
+        font-size: 13px;
+        color: #dc2626;
+        font-weight: 800;
+    }
+
+    .kpi-delta-neutral {
+        font-size: 13px;
+        color: #64748b;
+        font-weight: 800;
+    }
+
+    .kpi-delta-up span,
+    .kpi-delta-down span,
+    .kpi-delta-neutral span {
         color: #64748b;
         font-weight: 500;
         margin-left: 8px;
@@ -303,12 +300,37 @@ def format_integer(value):
     return f"{int(value):,}".replace(",", ".")
 
 
+def calculate_delta(current_value, previous_value):
+    if pd.isna(previous_value) or previous_value == 0:
+        return 0
+
+    return ((current_value - previous_value) / previous_value) * 100
+
+
 def format_delta(value):
     if pd.isna(value) or np.isinf(value):
         value = 0
 
-    arrow = "↑" if value >= 0 else "↓"
-    return f"{arrow} {abs(value):.1f}%"
+    if value > 0:
+        return f"↑ {abs(value):.1f}%"
+
+    if value < 0:
+        return f"↓ {abs(value):.1f}%"
+
+    return f"• {abs(value):.1f}%"
+
+
+def delta_class(value):
+    if pd.isna(value) or np.isinf(value):
+        value = 0
+
+    if value > 0:
+        return "kpi-delta-up"
+
+    if value < 0:
+        return "kpi-delta-down"
+
+    return "kpi-delta-neutral"
 
 
 def safe_qcut_score(series, labels):
@@ -616,6 +638,7 @@ def monthly_sales(df):
             columns=[
                 "year_month",
                 "total_sales",
+                "total_profit",
                 "total_orders",
                 "total_customers"
             ]
@@ -626,6 +649,7 @@ def monthly_sales(df):
         .groupby("year_month")
         .agg(
             total_sales=("total_sales", "sum"),
+            total_profit=("profit", "sum"),
             total_orders=("order_id", "nunique"),
             total_customers=("customer_id", "nunique")
         )
@@ -787,11 +811,7 @@ df_final = df_clean.merge(
 # ============================================================
 
 st.sidebar.markdown(
-    f"""
-    <div class="sidebar-logo">
-        <img src="{STREAMLIT_ICON}" style="height:28px; width:42px; object-fit:contain;" />
-        <span>Streamlit</span>
-    </div>
+    """
     <div class="filter-title">Filter Data</div>
     """,
     unsafe_allow_html=True
@@ -936,15 +956,34 @@ st.markdown(
 monthly_filtered_for_delta = monthly_sales(filtered_df)
 
 if len(monthly_filtered_for_delta) >= 2:
-    last_sales = monthly_filtered_for_delta["total_sales"].iloc[-1]
-    prev_sales = monthly_filtered_for_delta["total_sales"].iloc[-2]
-    sales_delta = ((last_sales - prev_sales) / prev_sales * 100) if prev_sales else 0
-else:
-    sales_delta = 12.6
+    current_period = monthly_filtered_for_delta.iloc[-1]
+    previous_period = monthly_filtered_for_delta.iloc[-2]
 
-profit_delta = 18.4
-orders_delta = 9.7
-customers_delta = 11.3
+    sales_delta = calculate_delta(
+        current_period["total_sales"],
+        previous_period["total_sales"]
+    )
+
+    profit_delta = calculate_delta(
+        current_period["total_profit"],
+        previous_period["total_profit"]
+    )
+
+    orders_delta = calculate_delta(
+        current_period["total_orders"],
+        previous_period["total_orders"]
+    )
+
+    customers_delta = calculate_delta(
+        current_period["total_customers"],
+        previous_period["total_customers"]
+    )
+
+else:
+    sales_delta = 0
+    profit_delta = 0
+    orders_delta = 0
+    customers_delta = 0
 
 total_sales_value = filtered_df["total_sales"].sum()
 total_profit_value = filtered_df["profit"].sum()
@@ -961,7 +1000,7 @@ with kpi1:
             <div>
                 <div class="kpi-label">Total Sales</div>
                 <div class="kpi-value">{format_currency(total_sales_value)}</div>
-                <div class="kpi-delta">{format_delta(sales_delta)} <span>vs periode sebelumnya</span></div>
+                <div class="{delta_class(sales_delta)}">{format_delta(sales_delta)} <span>vs periode sebelumnya</span></div>
             </div>
         </div>
         """,
@@ -976,7 +1015,7 @@ with kpi2:
             <div>
                 <div class="kpi-label">Total Profit</div>
                 <div class="kpi-value">{format_currency(total_profit_value)}</div>
-                <div class="kpi-delta">↑ {profit_delta:.1f}% <span>vs periode sebelumnya</span></div>
+                <div class="{delta_class(profit_delta)}">{format_delta(profit_delta)} <span>vs periode sebelumnya</span></div>
             </div>
         </div>
         """,
@@ -991,7 +1030,7 @@ with kpi3:
             <div>
                 <div class="kpi-label">Total Orders</div>
                 <div class="kpi-value">{format_integer(total_orders_value)}</div>
-                <div class="kpi-delta">↑ {orders_delta:.1f}% <span>vs periode sebelumnya</span></div>
+                <div class="{delta_class(orders_delta)}">{format_delta(orders_delta)} <span>vs periode sebelumnya</span></div>
             </div>
         </div>
         """,
@@ -1006,7 +1045,7 @@ with kpi4:
             <div>
                 <div class="kpi-label">Total Customers</div>
                 <div class="kpi-value">{format_integer(total_customers_value)}</div>
-                <div class="kpi-delta">↑ {customers_delta:.1f}% <span>vs periode sebelumnya</span></div>
+                <div class="{delta_class(customers_delta)}">{format_delta(customers_delta)} <span>vs periode sebelumnya</span></div>
             </div>
         </div>
         """,
