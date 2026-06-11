@@ -1,20 +1,18 @@
 # ============================================================
 # STREAMLIT DASHBOARD
-# Tampilan mengikuti mockup: Global E-Commerce Sales Dashboard
-# Fokus data: KPI ringkas, segmentasi pelanggan RFM, cluster,
-# prioritas bisnis, dan forecast.
+# Global E-Commerce Sales Dashboard
+# Icon sudah inline, tidak perlu folder assets
 # Dataset dibaca dari: data/global_ecommerce_sales.csv
-# Icon dibaca dari folder: assets/
 # ============================================================
 
-import base64
 from pathlib import Path
+from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
+import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
-import streamlit as st
 
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
@@ -35,25 +33,73 @@ st.set_page_config(
 
 
 # ============================================================
-# GLOBAL STYLE
+# INLINE SVG ICONS
+# ============================================================
+
+def svg_icon(svg: str) -> str:
+    return "data:image/svg+xml;utf8," + quote(svg)
+
+
+STREAMLIT_ICON = svg_icon("""
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<path fill="#ff4b4b" d="M32 6l8 16 17-3-12 13 8 17-21-9-21 9 8-17L7 19l17 3z"/>
+</svg>
+""")
+
+
+BAG_ICON = svg_icon("""
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+<path d="M6 8h12l1 13H5L6 8z"/>
+<path d="M9 8V6a3 3 0 0 1 6 0v2"/>
+</svg>
+""")
+
+
+DOLLAR_ICON = svg_icon("""
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="#14b8a6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+<path d="M12 2v20"/>
+<path d="M17 7.5c-.9-1-2.2-1.5-3.8-1.5-2.2 0-3.7 1-3.7 2.7 0 4.2 7.5 1.8 7.5 6.3 0 1.8-1.6 3-4.2 3-2 0-3.7-.7-4.8-2"/>
+</svg>
+""")
+
+
+CART_ICON = svg_icon("""
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="#4f46e5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+<circle cx="9" cy="20" r="1"/>
+<circle cx="18" cy="20" r="1"/>
+<path d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 2-1.5L21 8H7"/>
+</svg>
+""")
+
+
+USERS_ICON = svg_icon("""
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="#2563eb" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+<path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/>
+<circle cx="9.5" cy="7" r="4"/>
+<path d="M22 21v-2a4 4 0 0 0-3-3.8"/>
+<path d="M16 3.2a4 4 0 0 1 0 7.6"/>
+</svg>
+""")
+
+
+INFO_ICON = svg_icon("""
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="#2563eb" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+<circle cx="12" cy="12" r="10"/>
+<path d="M12 16v-4"/>
+<path d="M12 8h.01"/>
+</svg>
+""")
+
+
+# ============================================================
+# CSS STYLE
 # ============================================================
 
 st.markdown(
     """
     <style>
-    :root {
-        --blue: #2563eb;
-        --teal: #14b8a6;
-        --yellow: #f59e0b;
-        --red: #ef4444;
-        --navy: #0f172a;
-        --gray: #64748b;
-        --border: #e5e7eb;
-        --soft-bg: #f8fafc;
-    }
-
     .stApp {
-        background: #ffffff;
+        background-color: #ffffff;
     }
 
     .block-container {
@@ -67,10 +113,6 @@ st.markdown(
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
         border-right: 1px solid #e5e7eb;
-    }
-
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-        margin-bottom: 0.4rem;
     }
 
     .sidebar-logo {
@@ -134,9 +176,17 @@ st.markdown(
         height: 30px;
     }
 
-    .icon-blue { background: #e8efff; }
-    .icon-teal { background: #d8f3ef; }
-    .icon-indigo { background: #e8ebff; }
+    .icon-blue {
+        background: #e8efff;
+    }
+
+    .icon-teal {
+        background: #d8f3ef;
+    }
+
+    .icon-indigo {
+        background: #e8ebff;
+    }
 
     .kpi-label {
         font-size: 13px;
@@ -171,13 +221,6 @@ st.markdown(
         font-weight: 800;
         color: #0f172a;
         margin-bottom: 2px;
-    }
-
-    div[data-testid="stVerticalBlockBorderWrapper"] {
-        border-radius: 12px !important;
-        box-shadow: 0 2px 9px rgba(15, 23, 42, 0.05);
-        border-color: #e5e7eb !important;
-        background: #ffffff !important;
     }
 
     .info-box {
@@ -218,41 +261,18 @@ st.markdown(
 
 
 # ============================================================
-# PATH
+# PATH DATASET
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-ICON_DIR = BASE_DIR / "assets"
 DATA_PATH = BASE_DIR / "data" / "global_ecommerce_sales.csv"
 
 
 # ============================================================
-# ASSET HELPER
+# HELPER FORMAT
 # ============================================================
 
-def icon_data_uri(icon_name: str) -> str:
-    icon_path = ICON_DIR / icon_name
-
-    if not icon_path.exists():
-        return ""
-
-    encoded = base64.b64encode(icon_path.read_bytes()).decode("utf-8")
-    return f"data:image/svg+xml;base64,{encoded}"
-
-
-STREAMLIT_ICON = icon_data_uri("streamlit_mark.svg")
-BAG_ICON = icon_data_uri("bag.svg")
-DOLLAR_ICON = icon_data_uri("dollar.svg")
-CART_ICON = icon_data_uri("cart.svg")
-USERS_ICON = icon_data_uri("users.svg")
-INFO_ICON = icon_data_uri("info.svg")
-
-
-# ============================================================
-# FORMAT HELPER
-# ============================================================
-
-def format_currency(value: float) -> str:
+def format_currency(value):
     if pd.isna(value):
         return "$0"
 
@@ -265,14 +285,14 @@ def format_currency(value: float) -> str:
     return f"${value:,.0f}"
 
 
-def format_integer(value: float) -> str:
+def format_integer(value):
     if pd.isna(value):
         return "0"
 
     return f"{int(value):,}".replace(",", ".")
 
 
-def format_delta(value: float) -> str:
+def format_delta(value):
     if pd.isna(value) or np.isinf(value):
         value = 0
 
@@ -280,7 +300,7 @@ def format_delta(value: float) -> str:
     return f"{arrow} {abs(value):.1f}%"
 
 
-def safe_qcut_score(series: pd.Series, labels) -> pd.Series:
+def safe_qcut_score(series, labels):
     try:
         return pd.qcut(
             series.rank(method="first"),
@@ -296,7 +316,7 @@ def safe_qcut_score(series: pd.Series, labels) -> pd.Series:
 # ============================================================
 
 @st.cache_data(show_spinner=False)
-def load_data() -> pd.DataFrame:
+def load_data():
     if not DATA_PATH.exists():
         st.error(
             "File dataset tidak ditemukan. Pastikan file `global_ecommerce_sales.csv` berada di folder `data/`."
@@ -404,7 +424,7 @@ def load_data() -> pd.DataFrame:
 # ============================================================
 
 @st.cache_data(show_spinner=False)
-def build_rfm(df: pd.DataFrame) -> pd.DataFrame:
+def build_rfm(df):
     snapshot_date = df["order_date"].max() + pd.Timedelta(days=1)
 
     rfm = (
@@ -486,7 +506,7 @@ def build_rfm(df: pd.DataFrame) -> pd.DataFrame:
 # ============================================================
 
 @st.cache_data(show_spinner=False)
-def build_cluster(rfm: pd.DataFrame) -> pd.DataFrame:
+def build_cluster(rfm):
     result = rfm.copy()
 
     cluster_features = [
@@ -539,7 +559,7 @@ def build_cluster(rfm: pd.DataFrame) -> pd.DataFrame:
 # ============================================================
 
 @st.cache_data(show_spinner=False)
-def add_strategy(rfm: pd.DataFrame) -> pd.DataFrame:
+def add_strategy(rfm):
     result = rfm.copy()
 
     result["business_priority"] = np.select(
@@ -579,7 +599,7 @@ def add_strategy(rfm: pd.DataFrame) -> pd.DataFrame:
 # ============================================================
 
 @st.cache_data(show_spinner=False)
-def monthly_sales(df: pd.DataFrame) -> pd.DataFrame:
+def monthly_sales(df):
     if df.empty:
         return pd.DataFrame(
             columns=[
@@ -608,7 +628,7 @@ def monthly_sales(df: pd.DataFrame) -> pd.DataFrame:
 # ============================================================
 
 @st.cache_data(show_spinner=False)
-def forecast_sales(monthly_df: pd.DataFrame) -> pd.DataFrame:
+def forecast_sales(monthly_df):
     if monthly_df.empty or len(monthly_df) < 6:
         return pd.DataFrame(
             columns=[
