@@ -103,7 +103,7 @@ st.markdown(
     }
 
     .block-container {
-        padding-top: 1.25rem;
+        padding-top: 4.2rem;
         padding-left: 2rem;
         padding-right: 2rem;
         padding-bottom: 2rem;
@@ -133,19 +133,30 @@ st.markdown(
         margin-bottom: 1.25rem;
     }
 
+    .top-spacer {
+        height: 8px;
+    }
+
     .dashboard-title {
-        font-size: 42px;
-        line-height: 1.1;
+        font-size: 38px;
+        line-height: 1.25;
         font-weight: 850;
         color: #0f172a;
-        margin-bottom: 4px;
-        letter-spacing: -0.03em;
+        margin-top: 0;
+        margin-bottom: 6px;
+        letter-spacing: -0.02em;
+        overflow: visible;
     }
 
     .dashboard-subtitle {
         font-size: 16px;
         color: #64748b;
-        margin-bottom: 18px;
+        margin-bottom: 22px;
+        line-height: 1.5;
+    }
+
+    div[data-testid="stMarkdownContainer"] {
+        overflow: visible;
     }
 
     .kpi-card {
@@ -908,7 +919,8 @@ filtered_rfm = rfm[
 
 st.markdown(
     """
-    <div class="dashboard-title">Global E-Commerce Sales Dashboard</div>
+    <div class="top-spacer"></div>
+    <h1 class="dashboard-title">Global E-Commerce Sales Dashboard</h1>
     <div class="dashboard-subtitle">
     Dashboard interaktif untuk monitoring KPI, segmentasi pelanggan, clustering, dan forecasting penjualan.
     </div>
