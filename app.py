@@ -1,12 +1,12 @@
 # ============================================================
 # STREAMLIT DASHBOARD
 # Fokus: Segmentasi Pelanggan E-Commerce
+# Dataset: Global E-Commerce Sales & Customer Data
 # ============================================================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
-
 from pathlib import Path
 
 from sklearn.preprocessing import StandardScaler
@@ -14,7 +14,6 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 
 import plotly.express as px
-import plotly.graph_objects as go
 
 
 # ============================================================
@@ -35,10 +34,6 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .main {
-        background-color: #f8fafc;
-    }
-
     .block-container {
         padding-top: 1.5rem;
         padding-bottom: 2rem;
@@ -86,22 +81,6 @@ st.markdown(
         font-weight: 600;
     }
 
-    .chart-card {
-        background-color: white;
-        padding: 18px;
-        border-radius: 14px;
-        border: 1px solid #e5e7eb;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
-        margin-bottom: 16px;
-    }
-
-    .section-title {
-        font-size: 20px;
-        font-weight: 750;
-        color: #0f172a;
-        margin-bottom: 12px;
-    }
-
     .info-box {
         background-color: #eff6ff;
         color: #1d4ed8;
@@ -117,22 +96,26 @@ st.markdown(
 
 
 # ============================================================
-# HELPER FUNCTIONS
+# HELPER FUNCTION
 # ============================================================
 
-def format_number(value):
+def format_currency(value):
     if pd.isna(value):
-        return "0"
+        return "$0"
+
     if abs(value) >= 1_000_000:
         return f"${value / 1_000_000:,.2f}M"
+
     if abs(value) >= 1_000:
         return f"${value / 1_000:,.1f}K"
+
     return f"${value:,.0f}"
 
 
 def format_integer(value):
     if pd.isna(value):
         return "0"
+
     return f"{int(value):,}".replace(",", ".")
 
 
@@ -147,17 +130,22 @@ def safe_qcut_score(series, labels):
         return pd.Series([3] * len(series), index=series.index)
 
 
-@st.cache_data
-def load_data(uploaded_file=None):
-    if uploaded_file is not None:
-        df_raw = pd.read_csv(uploaded_file)
-    else:
-        default_path = Path("data/global_ecommerce_sales.csv")
+# ============================================================
+# LOAD DATA
+# ============================================================
 
-        if default_path.exists():
-            df_raw = pd.read_csv(default_path)
-        else:
-            st.stop()
+@st.cache_data
+def load_data():
+    file_path = Path("data/global_ecommerce_sales.csv")
+
+    if not file_path.exists():
+        st.error(
+            "File dataset tidak ditemukan. "
+            "Pastikan file `global_ecommerce_sales.csv` berada di folder `data/`."
+        )
+        st.stop()
+
+    df_raw = pd.read_csv(file_path)
 
     df = df_raw.copy()
 
@@ -243,6 +231,11 @@ def load_data(uploaded_file=None):
     return df
 
 
+# ============================================================
+# RFM ANALYSIS
+# ============================================================
+
+@st.cache_data
 def build_rfm(df):
     snapshot_date = df["order_date"].max() + pd.Timedelta(days=1)
 
@@ -300,14 +293,21 @@ def build_rfm(df):
     return rfm
 
 
+# ============================================================
+# CLUSTERING
+# ============================================================
+
+@st.cache_data
 def build_cluster(rfm):
+    rfm_clustered = rfm.copy()
+
     cluster_features = [
         "recency",
         "frequency",
         "monetary"
     ]
 
-    X = rfm[cluster_features].copy()
+    X = rfm_clustered[cluster_features].copy()
 
     for col in cluster_features:
         X[col] = np.log1p(X[col])
@@ -315,31 +315,47 @@ def build_cluster(rfm):
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
+    if len(rfm_clustered) < 2:
+        rfm_clustered["cluster"] = 0
+        rfm_clustered["cluster_label"] = "Cluster 0"
+        rfm_clustered["pca_1"] = 0
+        rfm_clustered["pca_2"] = 0
+        return rfm_clustered
+
     kmeans = KMeans(
         n_clusters=2,
         random_state=42,
         n_init=10
     )
 
-    rfm["cluster"] = kmeans.fit_predict(X_scaled)
-    rfm["cluster_label"] = rfm["cluster"].apply(lambda x: f"Cluster {x}")
+    rfm_clustered["cluster"] = kmeans.fit_predict(X_scaled)
+    rfm_clustered["cluster_label"] = rfm_clustered["cluster"].apply(
+        lambda x: f"Cluster {x}"
+    )
 
     pca = PCA(n_components=2, random_state=42)
     pca_result = pca.fit_transform(X_scaled)
 
-    rfm["pca_1"] = pca_result[:, 0]
-    rfm["pca_2"] = pca_result[:, 1]
+    rfm_clustered["pca_1"] = pca_result[:, 0]
+    rfm_clustered["pca_2"] = pca_result[:, 1]
 
-    return rfm
+    return rfm_clustered
 
 
+# ============================================================
+# BUSINESS STRATEGY
+# ============================================================
+
+@st.cache_data
 def add_strategy(rfm):
-    rfm["business_priority"] = np.select(
+    rfm_strategy = rfm.copy()
+
+    rfm_strategy["business_priority"] = np.select(
         [
-            rfm["rfm_segment"] == "Pelanggan Bernilai Tinggi",
-            rfm["rfm_segment"] == "Pelanggan Potensial",
-            rfm["rfm_segment"] == "Pelanggan Reguler",
-            rfm["rfm_segment"] == "Pelanggan Bernilai Rendah"
+            rfm_strategy["rfm_segment"] == "Pelanggan Bernilai Tinggi",
+            rfm_strategy["rfm_segment"] == "Pelanggan Potensial",
+            rfm_strategy["rfm_segment"] == "Pelanggan Reguler",
+            rfm_strategy["rfm_segment"] == "Pelanggan Bernilai Rendah"
         ],
         [
             "Prioritas Retensi",
@@ -357,13 +373,21 @@ def add_strategy(rfm):
         "Pelanggan Bernilai Rendah": "Gunakan campaign hemat biaya seperti promo sederhana atau reminder ringan."
     }
 
-    rfm["recommended_strategy"] = rfm["rfm_segment"].map(strategy_map)
+    rfm_strategy["recommended_strategy"] = (
+        rfm_strategy["rfm_segment"]
+        .map(strategy_map)
+        .fillna("Gunakan strategi pemasaran umum.")
+    )
 
-    return rfm
+    return rfm_strategy
 
+
+# ============================================================
+# MONTHLY SALES
+# ============================================================
 
 def build_monthly_sales(df):
-    monthly = (
+    monthly_sales = (
         df
         .groupby("year_month")
         .agg(
@@ -375,21 +399,14 @@ def build_monthly_sales(df):
         .sort_values("year_month")
     )
 
-    return monthly
+    return monthly_sales
 
 
 # ============================================================
-# LOAD DATA
+# PREPARE DATA
 # ============================================================
 
-st.sidebar.markdown("## Filter Data")
-
-uploaded_file = st.sidebar.file_uploader(
-    "Upload CSV Dataset",
-    type=["csv"]
-)
-
-df_clean = load_data(uploaded_file)
+df_clean = load_data()
 
 rfm = build_rfm(df_clean)
 rfm = build_cluster(rfm)
@@ -413,8 +430,10 @@ df_final = df_clean.merge(
 
 
 # ============================================================
-# SIDEBAR FILTERS
+# SIDEBAR FILTER
 # ============================================================
+
+st.sidebar.markdown("## Filter Data")
 
 region_options = sorted(df_final["region"].dropna().unique())
 customer_segment_options = sorted(df_final["customer_segment"].dropna().unique())
@@ -486,6 +505,10 @@ filtered_df = df_final[
     (df_final["order_date"].dt.date <= end_date)
 ].copy()
 
+if filtered_df.empty:
+    st.warning("Tidak ada data yang sesuai dengan filter.")
+    st.stop()
+
 filtered_customer_ids = filtered_df["customer_id"].unique()
 
 filtered_rfm = rfm[
@@ -501,7 +524,7 @@ st.markdown(
     """
     <div class="dashboard-title">Dashboard Segmentasi Pelanggan E-Commerce</div>
     <div class="dashboard-subtitle">
-    Dashboard interaktif untuk monitoring KPI ringkas, segmentasi RFM, clustering pelanggan, dan rekomendasi strategi.
+    Dashboard interaktif untuk melihat segmentasi pelanggan berdasarkan RFM, cluster pelanggan, dan rekomendasi strategi.
     </div>
     """,
     unsafe_allow_html=True
@@ -524,7 +547,7 @@ with col1:
         f"""
         <div class="kpi-card">
             <div class="kpi-label">Total Sales</div>
-            <div class="kpi-value">{format_number(total_sales)}</div>
+            <div class="kpi-value">{format_currency(total_sales)}</div>
             <div class="kpi-note">Nilai transaksi bersih</div>
         </div>
         """,
@@ -536,7 +559,7 @@ with col2:
         f"""
         <div class="kpi-card">
             <div class="kpi-label">Total Profit</div>
-            <div class="kpi-value">{format_number(total_profit)}</div>
+            <div class="kpi-value">{format_currency(total_profit)}</div>
             <div class="kpi-note">Total keuntungan</div>
         </div>
         """,
@@ -569,7 +592,7 @@ with col4:
 
 
 # ============================================================
-# MONTHLY SALES CHART
+# MONTHLY SALES
 # ============================================================
 
 st.markdown("### Tren Penjualan Bulanan")
@@ -598,7 +621,7 @@ st.plotly_chart(fig_monthly, use_container_width=True)
 
 
 # ============================================================
-# RFM AND CLUSTER CHARTS
+# RFM SEGMENT AND CLUSTER
 # ============================================================
 
 left_col, right_col = st.columns(2)
@@ -614,6 +637,7 @@ with left_col:
             total_monetary=("monetary", "sum")
         )
         .reset_index()
+        .sort_values("total_customers", ascending=False)
     )
 
     fig_rfm = px.pie(
@@ -642,6 +666,7 @@ with right_col:
             total_monetary=("monetary", "sum")
         )
         .reset_index()
+        .sort_values("cluster_label")
     )
 
     fig_cluster = px.bar(
@@ -736,6 +761,59 @@ with right_col:
     )
 
     st.plotly_chart(fig_pca, use_container_width=True)
+
+
+# ============================================================
+# SUMMARY TABLES
+# ============================================================
+
+left_col, right_col = st.columns(2)
+
+with left_col:
+    st.markdown("### Ringkasan Segmen RFM")
+
+    rfm_summary_table = (
+        filtered_rfm
+        .groupby("rfm_segment")
+        .agg(
+            total_customers=("customer_id", "nunique"),
+            avg_recency=("recency", "mean"),
+            avg_frequency=("frequency", "mean"),
+            avg_monetary=("monetary", "mean"),
+            total_monetary=("monetary", "sum")
+        )
+        .reset_index()
+        .sort_values("total_monetary", ascending=False)
+    )
+
+    st.dataframe(
+        rfm_summary_table,
+        use_container_width=True,
+        hide_index=True
+    )
+
+with right_col:
+    st.markdown("### Ringkasan Cluster")
+
+    cluster_profile_table = (
+        filtered_rfm
+        .groupby("cluster_label")
+        .agg(
+            total_customers=("customer_id", "nunique"),
+            avg_recency=("recency", "mean"),
+            avg_frequency=("frequency", "mean"),
+            avg_monetary=("monetary", "mean"),
+            total_monetary=("monetary", "sum")
+        )
+        .reset_index()
+        .sort_values("total_monetary", ascending=False)
+    )
+
+    st.dataframe(
+        cluster_profile_table,
+        use_container_width=True,
+        hide_index=True
+    )
 
 
 # ============================================================
